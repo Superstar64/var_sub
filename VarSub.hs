@@ -56,33 +56,43 @@ instance (Substitute e, Substitute e') => Substitute (e, e') where
 instance Substitute FlexibleState where
   substitute ex x (FlexibleState upper lower) = FlexibleState (substitute ex x upper) lower
 
+searchFlexible :: Monad m => String -> StateT Context m FlexibleState
 searchFlexible x = Map.findWithDefault (FlexibleState [] []) x <$> flexible <$> get
 
+searchRigid :: Monad m => String -> StateT Context m RigidState
 searchRigid x = Map.findWithDefault (RigidState []) x <$> rigid <$> get
 
+rigidSubType :: Monad m => String -> [Char] -> StateT Context m Bool
 rigidSubType x y | x == y = pure True
 rigidSubType x y = do
   RigidState children <- searchRigid x
   or <$> for children (\x -> rigidSubType x y)
 
+reachFlexible :: Monad m => Type -> String -> StateT Context m Bool
 reachFlexible (Flexible x) x' | x == x' = pure True
 reachFlexible (Flexible x) x' = do
   FlexibleState children _ <- searchFlexible x
   or <$> for children (\e -> reachFlexible e x')
 reachFlexible _ _ = pure False
 
+modifyProblems :: Monad m => ([Equation] -> [Equation]) -> StateT Context m ()
 modifyProblems f = modify $ \context -> context {problems = f $ problems context}
 
+modifyFlexible :: Monad m => (Map String FlexibleState -> Map String FlexibleState) -> StateT Context m ()
 modifyFlexible f = modify $ \context -> context {flexible = f $ flexible context}
 
+match :: Monad m => Type -> Type -> StateT Context m ()
 match e e' = modifyProblems (e := e' :)
 
+subtype :: Monad m => Type -> Type -> StateT Context m ()
 subtype e e' = modifyProblems (e :<= e' :)
 
+variable :: Type -> Bool
 variable (Flexible _) = True
 variable (Rigid _) = True
 variable _ = False
 
+constrain :: MonadFail m => Type -> Type -> StateT Context m ()
 constrain (Flexible x) (Flexible x') | x == x' = pure ()
 constrain (Flexible x) e | variable e = do
   b <- reachFlexible e x
@@ -106,6 +116,7 @@ constrain (Rigid x) (Rigid x') = do
 constrain _ _ = fail "can only constrain variables"
 
 -- todo occurance check
+unify :: MonadFail m => Type -> Type -> StateT Context m ()
 unify (Flexible x) (Flexible x') | x == x' = pure ()
 unify (Flexible x) e = do
   FlexibleState upper lower <- searchFlexible x
@@ -135,6 +146,7 @@ unify (Pointer e1 e2) (Pointer e1' e2') = do
   match e2 e2'
 unify _ _ = fail "unable to unify"
 
+solve :: (MonadIO m, MonadFail m) => StateT Context m ()
 solve = do
   context <- get
   case problems context of
@@ -150,8 +162,10 @@ solve = do
       constrain e e'
       solve
 
+runWithRaw :: (MonadIO m, MonadFail m) => Map String RigidState -> [Equation] -> m Context
 runWithRaw rigid problems = execStateT solve (Context problems mempty rigid 0 Map.empty [])
 
+runRaw :: (MonadIO m, MonadFail m) => [Equation] -> m Context
 runRaw = runWithRaw mempty
 
 sampleRaw1 =
@@ -185,11 +199,13 @@ data Term
   | Annotate Type Type Term
   deriving (Show)
 
+fresh :: Monad m => StateT Context m Type
 fresh = do
   i <- freshCounter <$> get
   modify $ \state -> state {freshCounter = i + 1}
   pure $ Flexible (show i)
 
+typeCheck :: MonadFail m => Term -> StateT Context m (Type, Type)
 typeCheck (Variable x) = do
   σ <- (Map.! x) <$> environment <$> get
   π <- fresh
@@ -227,12 +243,14 @@ typeCheck (Annotate σ π e) = do
   match π π'
   pure (σ, π)
 
+runWith :: (MonadFail m, MonadIO m) => Map String RigidState -> Term -> m ((Type, Type), Context)
 runWith rigid e = flip runStateT (Context [] mempty rigid 0 Map.empty []) $ do
   (σ, π) <- typeCheck e
   solve
   answers <- answers <$> get
   pure $ foldr (\(x, τ) -> substitute τ x) (σ, π) answers
 
+run :: (MonadFail m, MonadIO m) => Term -> m ((Type, Type), Context)
 run = runWith Map.empty
 
 sample1 = Lambda "x" $ Dereference $ Variable "x"
@@ -242,6 +260,7 @@ sample2 =
     Dereference $
       Variable "x"
 
+-- run with rigidSample
 sample3 =
   LambdaAscribe "x" (Pointer (Rigid "a") (Flexible "b")) $
     Annotate
