@@ -26,8 +26,10 @@ data Context = Context
   }
   deriving (Show)
 
+-- pointer are of the form `RGNRef s a` (alternatively `STRef s a`), where s is the region
 data Type = Flexible String | Rigid String | Function Type Type Type | Pointer Type Type deriving (Show)
 
+-- := are equality constrains, :<= are subtyping constrains
 data Equation = Type := Type | Type :<= Type deriving (Show)
 
 class Substitute e where
@@ -205,6 +207,7 @@ fresh = do
   modify $ \state -> state {freshCounter = i + 1}
   pure $ Flexible (show i)
 
+-- type checking returns a type and an effect
 typeCheck :: MonadFail m => Term -> StateT Context m (Type, Type)
 typeCheck (Variable x) = do
   σ <- (Map.! x) <$> environment <$> get
