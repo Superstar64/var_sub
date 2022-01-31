@@ -26,6 +26,9 @@ data Context = Context
   }
   deriving (Show)
 
+-- flexible are flexible type variables
+-- rigid are rigid type variables
+-- function are of the form σ -s> τ, where `s` is the region (latent effect)
 -- pointer are of the form `RGNRef s a` (alternatively `STRef s a`), where s is the region
 data Type = Flexible String | Rigid String | Function Type Type Type | Pointer Type Type deriving (Show)
 
