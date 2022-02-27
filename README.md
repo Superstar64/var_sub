@@ -5,7 +5,7 @@ This is planned to be eventually integrated into [aith](https://github.com/Super
 
 # Current status of the algorithm
 This algorithm is similiar to simple-sub expect that subtyping constrains are limited to only allow rigid and flexible type variables
-and cycles with flexible variables `(a <= b, b <= a)` generate equality constraints `a = b`.
+and cycles with flexible variables `[a <= b, b <= a]` generate equality constraints `[a = b]`.
 
 In simple sub a flexible variable will never be in the lower bounds position of another flexible variable.
 This is due to `constrain (Variable x) (Variable x')` prefering the `constrain (Variable x) e` case.
