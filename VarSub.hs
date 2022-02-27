@@ -6,20 +6,24 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.State.Strict
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Data.Traversable (for)
 
 infix 6 :=
 
 infix 6 :<=
 
-data FlexibleState = FlexibleState {upperBounds :: [Type], lowerRigidBounds :: [String]} deriving (Show)
+data FlexibleState = FlexibleState {incompleteUpperBounds :: [Type], greatestLowerRigidBound :: Maybe String} deriving (Show)
 
-data RigidState = RigidState {upperRigidBounds :: [String]} deriving (Show)
+-- all upper bounds
+-- a transitive closure is implied
+data RigidBounds = RigidBounds {upperRigidBounds :: Set String} deriving (Show)
 
 data Context = Context
   { problems :: [Equation],
     flexible :: Map String FlexibleState,
-    rigid :: Map String RigidState,
+    rigid :: Map String RigidBounds,
     freshCounter :: Int,
     environment :: Map String Type,
     answers :: [(String, Type)]
@@ -61,22 +65,36 @@ instance (Substitute e, Substitute e') => Substitute (e, e') where
 instance Substitute FlexibleState where
   substitute ex x (FlexibleState upper lower) = FlexibleState (substitute ex x upper) lower
 
-searchFlexible :: Monad m => String -> StateT Context m FlexibleState
-searchFlexible x = Map.findWithDefault (FlexibleState [] []) x <$> flexible <$> get
+indexFlexible' :: String -> Map String FlexibleState -> FlexibleState
+indexFlexible' x = Map.findWithDefault (FlexibleState [] Nothing) x
 
-searchRigid :: Monad m => String -> StateT Context m RigidState
-searchRigid x = Map.findWithDefault (RigidState []) x <$> rigid <$> get
+indexFlexible :: Monad m => String -> StateT Context m FlexibleState
+indexFlexible x = indexFlexible' x <$> flexible <$> get
 
-rigidSubType :: Monad m => String -> [Char] -> StateT Context m Bool
-rigidSubType x y | x == y = pure True
-rigidSubType x y = do
-  RigidState children <- searchRigid x
-  or <$> for children (\x -> rigidSubType x y)
+indexRigid' :: String -> Map String RigidBounds -> RigidBounds
+indexRigid' x = Map.findWithDefault (RigidBounds $ Set.singleton x) x
+
+indexRigid :: Monad m => String -> StateT Context m RigidBounds
+indexRigid x = indexRigid' x <$> rigid <$> get
+
+rigidSubType' :: String -> String -> Map String RigidBounds -> Bool
+rigidSubType' x y rigid = let RigidBounds bounds = indexRigid' x rigid in Set.member y bounds
+
+rigidSubType :: Monad m => String -> String -> StateT Context m Bool
+rigidSubType x y = rigidSubType' x y <$> rigid <$> get
+
+rigidJoin :: String -> String -> Map String RigidBounds -> Maybe String
+rigidJoin x y rigid = minimal (Set.toList upper) upper
+  where
+    upper = upperRigidBounds (indexRigid' x rigid) `Set.intersection` upperRigidBounds (indexRigid' y rigid)
+    minimal [] candidates | [item] <- Set.toList candidates = Just item
+    minimal (head : tail) candidates = minimal tail $ Set.filter (\x -> rigidSubType' x head rigid) candidates
+    minimal [] _ = Nothing
 
 reachFlexible :: Monad m => Type -> String -> StateT Context m Bool
 reachFlexible (Flexible x) x' | x == x' = pure True
 reachFlexible (Flexible x) x' = do
-  FlexibleState children _ <- searchFlexible x
+  FlexibleState children _ <- indexFlexible x
   or <$> for children (\e -> reachFlexible e x')
 reachFlexible _ _ = pure False
 
@@ -104,14 +122,15 @@ constrain (Flexible x) e | variable e = do
   if b
     then match (Flexible x) e
     else do
-      FlexibleState upper lower <- searchFlexible x
+      FlexibleState upper lower <- indexFlexible x
       let upper' = e : upper
       modifyFlexible (Map.insert x (FlexibleState upper' lower))
       for lower $ \x' -> subtype (Rigid x') e
       pure ()
 constrain (Rigid x) (Flexible x') = do
-  FlexibleState upper lower <- searchFlexible x'
-  let lower' = x : lower
+  FlexibleState upper lower <- indexFlexible x'
+  rigid <- rigid <$> get
+  let lower' = maybe (Just x) (\y -> rigidJoin x y rigid) lower
   modifyFlexible (Map.insert x' (FlexibleState upper lower'))
   for upper $ \e -> subtype (Rigid x) e
   pure ()
@@ -124,7 +143,7 @@ constrain _ _ = fail "can only constrain variables"
 unify :: MonadFail m => Type -> Type -> StateT Context m ()
 unify (Flexible x) (Flexible x') | x == x' = pure ()
 unify (Flexible x) e = do
-  FlexibleState upper lower <- searchFlexible x
+  FlexibleState upper lower <- indexFlexible x
   for upper $ \e' -> subtype e e'
   for lower $ \x' -> subtype (Rigid x') e
   modifyProblems (substitute e x)
@@ -134,7 +153,7 @@ unify (Flexible x) e = do
   -- then reunify it's constraints
   case e of
     Flexible x -> do
-      FlexibleState upper lower <- searchFlexible x
+      FlexibleState upper lower <- indexFlexible x
       for upper $ \e -> subtype (Flexible x) e
       for lower $ \x' -> subtype (Rigid x') (Flexible x)
       modifyFlexible (Map.delete x)
@@ -167,11 +186,15 @@ solve = do
       constrain e e'
       solve
 
-runWithRaw :: (MonadIO m, MonadFail m) => Map String RigidState -> [Equation] -> m Context
+runWithRaw :: (MonadIO m, MonadFail m) => Map String RigidBounds -> [Equation] -> m Context
 runWithRaw rigid problems = execStateT solve (Context problems mempty rigid 0 Map.empty [])
 
 runRaw :: (MonadIO m, MonadFail m) => [Equation] -> m Context
 runRaw = runWithRaw mempty
+
+rigidSample = Map.singleton "a" $ RigidBounds $ Set.fromList ["a", "b"]
+
+rigidSample2 = Map.fromList [("a", RigidBounds $ Set.fromList ["a", "c"]), ("b", RigidBounds $ Set.fromList ["b", "c"])]
 
 sampleRaw1 =
   map
@@ -189,11 +212,13 @@ sampleRaw1 =
       ("b", "l")
     ]
 
+-- run with rigidSample
 sampleRaw2 = [Flexible "a" := Rigid "a", Flexible "b" := Rigid "b", Flexible "a" :<= Flexible "b"]
 
 sampleRaw2' = [Flexible "a" :<= Flexible "b", Flexible "a" := Rigid "a", Flexible "b" := Rigid "b"]
 
-rigidSample = Map.singleton "a" $ RigidState ["b"]
+-- run with rigidSample2
+sampleRaw3 = [Rigid "a" :<= Flexible "x", Rigid "b" :<= Flexible "x"]
 
 data Term
   = Variable String
@@ -249,7 +274,7 @@ typeCheck (Annotate σ π e) = do
   match π π'
   pure (σ, π)
 
-runWith :: (MonadFail m, MonadIO m) => Map String RigidState -> Term -> m ((Type, Type), Context)
+runWith :: (MonadFail m, MonadIO m) => Map String RigidBounds -> Term -> m ((Type, Type), Context)
 runWith rigid e = flip runStateT (Context [] mempty rigid 0 Map.empty []) $ do
   (σ, π) <- typeCheck e
   solve
@@ -269,39 +294,12 @@ sample2 =
 -- run with rigidSample
 sample3 =
   LambdaAscribe "x" (Pointer (Rigid "a") (Flexible "b")) $
+    Dereference $ Variable "x"
+
+-- run with rigidSample
+sample4 =
+  LambdaAscribe "x" (Pointer (Rigid "a") (Flexible "b")) $
     Annotate
       (Flexible "c")
       (Rigid "b")
       $ Dereference $ Variable "x"
-
-sample4 =
-  Lambda "f" $
-    Lambda "x" $
-      Lambda "y" $
-        Application
-          (Application (Variable "f") (Dereference $ Variable "x"))
-          (Dereference $ Variable "y")
-
-sample5 =
-  Lambda "f" $
-    Lambda "g" $
-      Lambda "x" $
-        Lambda "y" $
-          Application
-            ( Application
-                (Variable "f")
-                (Application (Variable "g") $ Dereference $ Variable "x")
-            )
-            (Application (Variable "g") $ Dereference $ Variable "y")
-
-sample6 =
-  Lambda "f" $
-    Lambda "g" $
-      Lambda "x" $
-        Lambda "y" $
-          Application
-            ( Application
-                (Variable "f")
-                (Dereference $ Application (Variable "g") $ Variable "x")
-            )
-            (Dereference $ Application (Variable "g") $ Variable "y")
