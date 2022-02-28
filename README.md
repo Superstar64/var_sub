@@ -20,5 +20,4 @@ and picking the greatest lower bound is the most reasonable choice here.
 # Future ideas / goals
 * Transative reduction to simplify constraints
 * Figure out if this algorithm can produce principle types
-* Maybe try having a singular lower rigid bound on flexible variabless
 * Reason about general saneness properties like order of equations not mattering.
