@@ -130,9 +130,13 @@ constrain (Flexible x) e | variable e = do
 constrain (Rigid x) (Flexible x') = do
   FlexibleState upper lower <- indexFlexible x'
   rigid <- rigid <$> get
-  let lower' = maybe (Just x) (\y -> rigidJoin x y rigid) lower
-  modifyFlexible (Map.insert x' (FlexibleState upper lower'))
-  for upper $ \e -> subtype (Rigid x) e
+  lower' <- case lower of
+    Nothing -> pure $ x
+    Just y -> do
+      Just lower' <- pure $ rigidJoin x y rigid
+      pure lower'
+  modifyFlexible (Map.insert x' (FlexibleState upper (Just lower')))
+  for upper $ \e -> subtype (Rigid lower') e
   pure ()
 constrain (Rigid x) (Rigid x') = do
   True <- rigidSubType x x'
@@ -219,6 +223,9 @@ sampleRaw2' = [Flexible "a" :<= Flexible "b", Flexible "a" := Rigid "a", Flexibl
 
 -- run with rigidSample2
 sampleRaw3 = [Rigid "a" :<= Flexible "x", Rigid "b" :<= Flexible "x"]
+
+-- should error out
+sampleRaw4 = [Rigid "x" :<= Flexible "a", Rigid "y" :<= Flexible "a"]
 
 data Term
   = Variable String
