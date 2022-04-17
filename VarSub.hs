@@ -206,6 +206,15 @@ sampleRaw1 =
     [ ("a", "b"),
       ("b", "c"),
       ("c", "a"),
+    ]
+
+
+sampleRaw2 =
+  map
+    (\(a, b) -> Flexible a :<= Flexible b)
+    [ ("a", "b"),
+      ("b", "c"),
+      ("c", "a"),
       ("d", "a"),
       ("e", "a"),
       ("f", "b"),
@@ -217,15 +226,15 @@ sampleRaw1 =
     ]
 
 -- run with rigidSample
-sampleRaw2 = [Flexible "a" := Rigid "a", Flexible "b" := Rigid "b", Flexible "a" :<= Flexible "b"]
+sampleRaw3 = [Flexible "a" := Rigid "a", Flexible "b" := Rigid "b", Flexible "a" :<= Flexible "b"]
 
-sampleRaw2' = [Flexible "a" :<= Flexible "b", Flexible "a" := Rigid "a", Flexible "b" := Rigid "b"]
+sampleRaw3' = [Flexible "a" :<= Flexible "b", Flexible "a" := Rigid "a", Flexible "b" := Rigid "b"]
 
 -- run with rigidSample2
-sampleRaw3 = [Rigid "a" :<= Flexible "x", Rigid "b" :<= Flexible "x"]
+sampleRaw4 = [Rigid "a" :<= Flexible "x", Rigid "b" :<= Flexible "x"]
 
 -- should error out
-sampleRaw4 = [Rigid "x" :<= Flexible "a", Rigid "y" :<= Flexible "a"]
+sampleRaw5 = [Rigid "x" :<= Flexible "a", Rigid "y" :<= Flexible "a"]
 
 data Term
   = Variable String
