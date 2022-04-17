@@ -2,6 +2,7 @@
 
 module VarSub where
 
+import Control.Arrow (second)
 import Control.Monad.IO.Class
 import Control.Monad.Trans.State.Strict
 import Data.Map (Map)
@@ -104,6 +105,9 @@ modifyProblems f = modify $ \context -> context {problems = f $ problems context
 modifyFlexible :: Monad m => (Map String FlexibleState -> Map String FlexibleState) -> StateT Context m ()
 modifyFlexible f = modify $ \context -> context {flexible = f $ flexible context}
 
+modifyAnswers :: Monad m => ([(String, Type)] -> [(String, Type)]) -> StateT Context m ()
+modifyAnswers f = modify $ \context -> context {answers = f $ answers context}
+
 match :: Monad m => Type -> Type -> StateT Context m ()
 match e e' = modifyProblems (e := e' :)
 
@@ -151,8 +155,9 @@ unify (Flexible x) e = do
   for upper $ \e' -> subtype e e'
   for lower $ \x' -> subtype (Rigid x') e
   modifyProblems (substitute e x)
-  -- if a cycle forms then it must contain `e`
   modifyFlexible (substitute e x . Map.delete x)
+  modifyAnswers (map (second $ substitute e x))
+  -- if a cycle forms then it must contain `e`
   -- so if the right handside is a variable
   -- then reunify it's constraints
   case e of
@@ -162,7 +167,7 @@ unify (Flexible x) e = do
       for lower $ \x' -> subtype (Rigid x') (Flexible x)
       modifyFlexible (Map.delete x)
     _ -> pure ()
-  modify $ \state -> state {answers = (x, e) : answers state}
+  modifyAnswers ((x, e) :)
 unify e (Flexible x) = unify (Flexible x) e
 unify (Rigid x) (Rigid x') | x == x' = pure ()
 unify (Function e1 e2 e3) (Function e1' e2' e3') = do
@@ -205,9 +210,8 @@ sampleRaw1 =
     (\(a, b) -> Flexible a :<= Flexible b)
     [ ("a", "b"),
       ("b", "c"),
-      ("c", "a"),
+      ("c", "a")
     ]
-
 
 sampleRaw2 =
   map
