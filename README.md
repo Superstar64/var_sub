@@ -1,7 +1,7 @@
 # Var Sub
 This is my attempt typecheck the single effect calculus from "Monadic and Substructural Type Systems for Region-Based Memory Management"
 with an algorithm inspired by simple-sub from "The Simple Essence of Algebraic Subtyping".
-This is planned to be eventually integrated into [aith](https://github.com/Superstar64/aith).
+This is currently integrated into [aith](https://github.com/Superstar64/aith) (but where the order is dualed).
 
 # Current status of the algorithm
 This algorithm is similiar to simple-sub expect that subtyping constrains are limited to only allow rigid and flexible type variables
