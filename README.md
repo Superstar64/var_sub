@@ -22,8 +22,3 @@ This seem very closely related with ACI (associative-communative-idempotent) uni
 ACI unification works with semilattices, while Var Sub works with partially ordered sets.
 Var Sub implements constant unification and it appears to be unitary for elementary unification, but not for constants unification.
 See [(Unification Theory)](https://www.cs.bu.edu/fac/snyder/publications/UnifChapter.pdf) for definitions.
-
-# Future ideas / goals
-* Transative reduction to simplify constraints
-* Figure out if this algorithm can produce principle types
-* Reason about general saneness properties like order of equations not mattering.
